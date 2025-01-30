@@ -1,0 +1,457 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Assistant Interface</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 20px;
+        }
+
+        .chat-section, .files-section {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        #chat-history {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+        }
+
+        .message {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-radius: 4px;
+        }
+
+        .user-message {
+            background: #e3f2fd;
+            margin-left: 20px;
+        }
+
+        .assistant-message {
+            background: #f5f5f5;
+            margin-right: 20px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        input[type="text"] {
+            flex-grow: 1;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background: #1976d2;
+        }
+
+        .file-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .status-bar {
+            background: #333;
+            color: white;
+            padding: 8px;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            text-align: center;
+        }
+
+        #event-log {
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            background: #1e1e1e;
+            color: #ddd;
+            padding: 10px;
+            margin-top: 20px;
+            border-radius: 4px;
+        }
+
+        .event-entry {
+            margin-bottom: 5px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 5px;
+        }
+
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background-color: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    max-width: 500px;
+    width: 90%;
+}
+
+.modal-header {
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #eee;
+}
+
+.modal-title {
+    font-size: 1.2em;
+    font-weight: bold;
+    color: #333;
+    margin: 0;
+}
+
+.modal-body {
+    margin-bottom: 20px;
+    line-height: 1.5;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.modal-btn {
+    padding: 8px 16px;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
+}
+
+.modal-btn-confirm {
+    background-color: #2196f3;
+    color: white;
+}
+
+.modal-btn-confirm:hover {
+    background-color: #1976d2;
+}
+
+.modal-btn-cancel {
+    background-color: #e0e0e0;
+    color: #333;
+}
+
+.modal-btn-cancel:hover {
+    background-color: #d0d0d0;
+}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="chat-section">
+            <h2>Chat</h2>
+            <div id="chat-history"></div>
+            <div class="input-group">
+                <input type="text" id="message-input" placeholder="Type your message...">
+                <button onclick="sendMessage()">Send</button>
+            </div>
+            <div id="event-log"></div>
+        </div>
+
+        <div class="files-section">
+            <h2>Files</h2>
+            <div class="input-group">
+                <input type="file" id="file-input" multiple>
+                <button onclick="uploadFiles()">Upload</button>
+            </div>
+            <ul id="file-list" class="file-list"></ul>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <span id="status">Ready</span>
+    </div>
+
+    <script>
+        let ws;
+        // const API_URL = 'http://localhost:8080';
+        const API_URL = '';
+
+        // Initialize WebSocket connection
+        function initWebSocket() {
+            ws = new WebSocket('ws://localhost:8080/ws');
+            
+            ws.onopen = () => {
+                logEvent('WebSocket connected');
+                updateStatus('Connected');
+            };
+
+            ws.onclose = () => {
+                logEvent('WebSocket disconnected');
+                updateStatus('Disconnected');
+                // Attempt to reconnect after 5 seconds
+                setTimeout(initWebSocket, 5000);
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleEvent(data);
+            };
+        }
+
+        function handleEvent(event) {
+            console.log(event); 
+            logEvent(`Event received: ${event.Type}`);
+            
+            switch(event.Type) {
+                case 0: // EventInput
+                    addMessage('user', event.Payload.Content);
+                    break;
+                case 1: // EventError
+                    logEvent(`Error: ${JSON.stringify(event.Payload)}`, 'error');
+                    break;
+                case 2: // EventOutput
+                    addMessage('assistant', event.Payload);
+                    break;
+                case 3: // EventStatusUpdate
+                    updateStatus(event.Payload.New);
+                    break;
+                case 4: // EventFileNotification
+                    refreshFileList();
+                    break;
+                case "confirmation_request": // For direct confirmation requests
+                  logEvent(`Confirmation request: ${event.Payload.Message}`);
+                    handleConfirmationRequest(event.Payload);
+                    break;
+            }
+        }
+        // function handleUserConfirm(request) {
+        //     const confirmed = confirm(request.Message);
+        //
+        //     // Send response back
+        //     ws.send(JSON.stringify({
+        //         type: "user_response",
+        //         payload: {
+        //             id: request.ID,
+        //             approved: confirmed,
+        //         }
+        //     }));
+        // }
+
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value.trim();
+            
+            if (message) {
+                fetch(`${API_URL}/api/chat`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ message }),
+                });
+                
+                input.value = '';
+            }
+        }
+
+        function addMessage(type, content) {
+            const chatHistory = document.getElementById('chat-history');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}-message`;
+            messageDiv.textContent = content;
+            chatHistory.appendChild(messageDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+
+        function uploadFiles() {
+            const fileInput = document.getElementById('file-input');
+            const formData = new FormData();
+            
+            for (const file of fileInput.files) {
+                formData.append('files', file);
+            }
+
+            fetch(`${API_URL}/api/files`, {
+                method: 'POST',
+                body: formData,
+            })
+            .then(() => {
+                fileInput.value = '';
+                refreshFileList();
+            })
+            .catch(error => logEvent(`Error uploading files: ${error}`, 'error'));
+        }
+
+        function refreshFileList() {
+            fetch(`${API_URL}/api/files`)
+                .then(response => response.json())
+                .then(files => {
+                    const fileList = document.getElementById('file-list');
+                    fileList.innerHTML = '';
+                    
+                    Object.entries(files).forEach(([filename, info]) => {
+                        const li = document.createElement('li');
+                        li.className = 'file-item';
+                        li.innerHTML = `
+                            <span>${filename}</span>
+                            <button onclick="removeFile('${filename}')">Remove</button>
+                        `;
+                        fileList.appendChild(li);
+                    });
+                })
+                .catch(error => logEvent(`Error fetching files: ${error}`, 'error'));
+        }
+
+        function removeFile(filename) {
+            fetch(`${API_URL}/api/files/${filename}`, {
+                method: 'DELETE',
+            })
+            .then(() => refreshFileList())
+            .catch(error => logEvent(`Error removing file: ${error}`, 'error'));
+        }
+
+        function updateStatus(status) {
+            document.getElementById('status').textContent = status;
+        }
+
+        function logEvent(message, type = 'info') {
+
+            console.log(message);
+            const eventLog = document.getElementById('event-log');
+            const entry = document.createElement('div');
+            entry.className = `event-entry event-${type}`;
+            entry.textContent = `[${new Date().toISOString()}] ${message}`;
+            eventLog.appendChild(entry);
+            eventLog.scrollTop = eventLog.scrollHeight;
+        }
+
+        function showConfirmationDialog(confirmation) {
+            return new Promise((resolve) => {
+                const modal = document.createElement('div');
+                modal.className = 'modal-overlay';
+                
+                modal.innerHTML = `
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h3 class="modal-title">Confirmation Required</h3>
+                        </div>
+                        <div class="modal-body">
+                            ${confirmation.Message}
+                        </div>
+                        <div class="modal-footer">
+                            <button class="modal-btn modal-btn-cancel" data-response="false">Cancel</button>
+                            <button class="modal-btn modal-btn-confirm" data-response="true">Confirm</button>
+                        </div>
+                    </div>
+                `;
+
+                // Prevent clicking outside from closing the modal
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        e.stopPropagation();
+                    }
+                });
+
+                // Handle button clicks
+                const buttons = modal.querySelectorAll('.modal-btn');
+                buttons.forEach(button => {
+                    button.addEventListener('click', () => {
+                        const response = button.dataset.response === 'true';
+                        document.body.removeChild(modal);
+                        resolve(response);
+                    });
+                });
+
+                document.body.appendChild(modal);
+            });
+        }
+          
+
+        // Update handleConfirmationRequest to use the modal
+        async function handleConfirmationRequest(confirmation) {
+            const confirmed = await showConfirmationDialog(confirmation);
+            
+            // Send response via WebSocket
+            ws.send(JSON.stringify({
+                type: "user_response",
+                payload: {
+                    id: confirmation.ID,
+                    approved: confirmed,
+                }
+            }));
+
+            // Also send via HTTP endpoint as fallback
+            fetch(`${API_URL}/api/confirmation`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    id: confirmation.ID,
+                    approved: confirmed,
+                }),
+            }).catch(error => logEvent(`Error sending confirmation response: ${error}`, 'error'));
+
+            // Log the response
+            logEvent(`Confirmation ${confirmation.ID} response: ${confirmed ? 'Approved' : 'Rejected'}`);
+        }
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            initWebSocket();
+            refreshFileList();
+
+            // Add enter key handler for message input
+            document.getElementById('message-input').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+        });
+    </script>
+</body>
+</html>
